@@ -1,0 +1,16 @@
+domain: sunkai.xyz
+layout:
+- go.kubebuilder.io/v3
+projectName: nodepool
+repo: nodepool
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: sunkai.xyz
+  group: nodes
+  kind: NodePool
+  path: nodepool/api/v1
+  version: v1
+version: "3"
