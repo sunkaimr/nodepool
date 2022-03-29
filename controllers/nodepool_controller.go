@@ -20,12 +20,14 @@ import (
 	"context"
 	"fmt"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	nodev1 "nodepool/api/v1"
+	poolv1 "nodepool/api/v1"
 )
 
 // NodePoolReconciler reconciles a NodePool object
@@ -47,36 +49,74 @@ type NodePoolReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
+// Reconcile. nodepool变动时处理逻辑
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	pool := nodev1.NodePool{}
+	exist := true
+	pool := poolv1.NodePool{}
 	err := r.Get(ctx, req.NamespacedName, &pool)
 	if err != nil {
-		log.Log.Info(fmt.Sprintf("%v, name: %v", req, pool.Name))
-		return ctrl.Result{}, err
-	}
-
-	var nodes corev1.NodeList
-	// 查看是否存在对应的节点，如果存在那么就给这些节点加上数据
-	err = r.List(ctx, &nodes, &client.ListOptions{})
-	if client.IgnoreNotFound(err) != nil {
-		return ctrl.Result{}, err
-	}
-
-	if len(nodes.Items) > 0 {
-		r.Log.Info("find nodes, will merge data", "nodes", len(nodes.Items))
-		for _, n := range nodes.Items {
-			r.Log.Info("find node: %s", n.Name)
+		if errors.IsNotFound(err) {
+			log.Log.Info(fmt.Sprintf("node: %v has been delete", req))
+			exist = false
+		} else {
+			log.Log.Error(err, fmt.Sprintf("%v", req))
+			return ctrl.Result{}, err
 		}
 	}
 
+	if !exist {
+		// 默认的nodepool被删除时自动创建
+		if req.Name ==  DefaultNodePoolName{
+			pool := GenerateNodePoolObj(DefaultNodePoolName, req.Namespace)
+			err = r.Create(ctx, pool)
+			if err != nil {
+				log.Log.Error(err, "error on create nodepool")
+				return ctrl.Result{}, err
+			}
+			log.Log.Info(fmt.Sprintf("default nodepool: %s/%s not exist and created", pool.Namespace, pool.Name))
+		}else{
+			// 非默认的nodepool被删除无需处理
+			log.Log.Info(fmt.Sprintf("nodepool: %s/%s not exist", pool.Namespace, pool.Name))
+			return ctrl.Result{}, nil
+		}
+	} else {
+		// nodepool 更新时恢复其spec中的默认字段
+		genPool := GenerateNodePoolObj(DefaultNodePoolName, pool.Namespace)
+		if !reflect.DeepEqual(pool.Spec.NodeSelector, genPool.Spec.NodeSelector) {
+			pool.Spec.NodeSelector = genPool.Spec.NodeSelector
+			err = r.Update(ctx, &pool)
+			if err != nil {
+				log.Log.Error(err, "error on update nodepool")
+				return ctrl.Result{}, err
+			}
+			log.Log.Info(fmt.Sprintf("nodepool: %s/%s change and recovered", pool.Namespace, pool.Name))
+		}
+	}
+
+	nodeList := corev1.NodeList{}
+	err = r.List(ctx, &nodeList)
+	if err != nil {
+		log.Log.Error(err, fmt.Sprintf("error on getting all nodes"))
+		return ctrl.Result{}, err
+	}
+
+	needUpdate, nodes := FindMatchNodesByNodepool(&nodeList, &pool)
+	if needUpdate {
+		pool.Status.Nodes = nodes
+		err = r.Status().Update(ctx, &pool)
+		if err != nil {
+			log.Log.Error(err, fmt.Sprintf("failed to add node to nodepool:%v", pool))
+			return ctrl.Result{}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&nodev1.NodePool{}).
+		For(&poolv1.NodePool{}).
 		Complete(r)
 }
