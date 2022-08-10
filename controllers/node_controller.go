@@ -39,27 +39,25 @@ type NodeReconciler struct {
 //+kubebuilder:rbac:groups=nodes.sunkai.xyz,resources=nodepools/finalizers,verbs=update
 // Reconcile, node发生变动。增、删、改
 func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	l := log.FromContext(ctx)
 
 	nodeExist := true
 	node := corev1.Node{}
 	err := r.Get(ctx, req.NamespacedName, &node)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Log.Info(fmt.Sprintf("node:%v not exist", req))
-			// TODO // 清理nodepool中的node
+			l.Info(fmt.Sprintf("node:%v not exist", req))
 			nodeExist = false
 		} else {
-			log.Log.Error(err, fmt.Sprintf("error on getting node:%v", req))
+			l.Error(err, fmt.Sprintf("error on getting node:%v", req))
 			return ctrl.Result{}, err
 		}
-
 	}
 
 	poolList := poolv1.NodePoolList{}
 	err = r.List(ctx, &poolList)
 	if err != nil {
-		log.Log.Error(err, fmt.Sprintf("error on getting all nodePool"))
+		l.Error(err, fmt.Sprintf("error on getting all nodePool"))
 		return ctrl.Result{}, err
 	}
 
@@ -76,7 +74,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		pool.Status.Nodes = deleteNodeFromPoolnodes(req.Name, pool.Status.Nodes)
 		err = r.Status().Update(ctx, pool)
 		if err != nil {
-			log.Log.Error(err, fmt.Sprintf("failed to delete node from nodepool:%v", pool))
+			l.Error(err, fmt.Sprintf("failed to delete node from nodepool:%v", pool))
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -86,7 +84,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	found := false
 	pool := FindNodepoolByNodeObj(&node, &poolList)
 	if pool == nil {
-		log.Log.Info(fmt.Sprintf("node: %v not match any nodepool", node.Name))
+		l.Info(fmt.Sprintf("node: %v not match any nodepool", node.Name))
 	}
 
 	if found {
@@ -95,11 +93,11 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if needUpdate {
 			err = r.Status().Update(ctx, pool)
 			if err != nil {
-				log.Log.Error(err, fmt.Sprintf("failed to add node: %v to nodepool:%v/%v",
+				l.Error(err, fmt.Sprintf("failed to add node: %v to nodepool:%v/%v",
 					node.Name, pool.Namespace, pool.Name))
 				return ctrl.Result{}, err
 			}
-			log.Log.Info(fmt.Sprintf("add node: %v to nodepool: %v/%v",
+			l.Info(fmt.Sprintf("add node: %v to nodepool: %v/%v",
 				node.Name, pool.Namespace, pool.Name))
 		}
 		return ctrl.Result{}, nil
@@ -109,7 +107,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	nodeList := corev1.NodeList{}
 	err = r.List(ctx, &nodeList)
 	if err != nil {
-		log.Log.Error(err, fmt.Sprintf("error on getting all node"))
+		l.Error(err, fmt.Sprintf("error on getting all node"))
 		return ctrl.Result{}, err
 	}
 
@@ -119,10 +117,10 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			pool.Status.Nodes = nodes
 			err = r.Status().Update(ctx, &pool)
 			if err != nil {
-				log.Log.Error(err, fmt.Sprintf("failed to add node to nodepool:%v", pool))
+				l.Error(err, fmt.Sprintf("failed to add node to nodepool:%v", pool))
 				return ctrl.Result{}, err
 			}
-			log.Log.Info(fmt.Sprintf("update nodepool:%s/%s, nodes: %v", pool.Namespace, pool.Name, nodes))
+			l.Info(fmt.Sprintf("update nodepool:%s/%s, nodes: %v", pool.Namespace, pool.Name, nodes))
 		}
 	}
 	return ctrl.Result{}, nil

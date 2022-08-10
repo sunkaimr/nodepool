@@ -51,34 +51,47 @@ type NodePoolReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 // Reconcile. nodepool变动时处理逻辑
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	l := log.FromContext(ctx)
 
 	exist := true
 	pool := poolv1.NodePool{}
 	err := r.Get(ctx, req.NamespacedName, &pool)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Log.Info(fmt.Sprintf("node: %v has been delete", req))
+			l.Info(fmt.Sprintf("nodepool: %v not exist", req.NamespacedName))
 			exist = false
 		} else {
-			log.Log.Error(err, fmt.Sprintf("%v", req))
+			l.Error(err, fmt.Sprintf("%v", req))
 			return ctrl.Result{}, err
 		}
 	}
 
+	// 判断ns是否需要创建nodepool
+	if InclusionExceptionNs(req.Namespace) {
+		// 不需要创建nodepool，但是nodepool已经存在了就删除掉
+		if exist  {
+			err = r.Delete(ctx, &pool)
+			if err != nil {
+				l.Error(err, "error on delete nodepool")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
 	if !exist {
 		// 默认的nodepool被删除时自动创建
-		if req.Name ==  DefaultNodePoolName{
+		if req.Name == DefaultNodePoolName {
 			pool := GenerateNodePoolObj(DefaultNodePoolName, req.Namespace)
 			err = r.Create(ctx, pool)
 			if err != nil {
-				log.Log.Error(err, "error on create nodepool")
+				l.Error(err, "error on create nodepool")
 				return ctrl.Result{}, err
 			}
-			log.Log.Info(fmt.Sprintf("default nodepool: %s/%s not exist and created", pool.Namespace, pool.Name))
-		}else{
+			l.Info(fmt.Sprintf("default nodepool: %s/%s not exist and created", pool.Namespace, pool.Name))
+		} else {
 			// 非默认的nodepool被删除无需处理
-			log.Log.Info(fmt.Sprintf("nodepool: %s/%s not exist", pool.Namespace, pool.Name))
+			l.Info(fmt.Sprintf("nodepool: %s/%s not exist", pool.Namespace, pool.Name))
 			return ctrl.Result{}, nil
 		}
 	} else {
@@ -88,17 +101,17 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			pool.Spec.NodeSelector = genPool.Spec.NodeSelector
 			err = r.Update(ctx, &pool)
 			if err != nil {
-				log.Log.Error(err, "error on update nodepool")
+				l.Error(err, "error on update nodepool")
 				return ctrl.Result{}, err
 			}
-			log.Log.Info(fmt.Sprintf("nodepool: %s/%s change and recovered", pool.Namespace, pool.Name))
+			l.Info(fmt.Sprintf("nodepool: %s/%s change and recovered", pool.Namespace, pool.Name))
 		}
 	}
 
 	nodeList := corev1.NodeList{}
 	err = r.List(ctx, &nodeList)
 	if err != nil {
-		log.Log.Error(err, fmt.Sprintf("error on getting all nodes"))
+		l.Error(err, fmt.Sprintf("error on getting all nodes"))
 		return ctrl.Result{}, err
 	}
 
@@ -107,7 +120,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		pool.Status.Nodes = nodes
 		err = r.Status().Update(ctx, &pool)
 		if err != nil {
-			log.Log.Error(err, fmt.Sprintf("failed to add node to nodepool:%v", pool))
+			l.Error(err, fmt.Sprintf("failed to add node to nodepool:%v", pool))
 			return ctrl.Result{}, err
 		}
 	}

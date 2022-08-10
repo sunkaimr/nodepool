@@ -88,7 +88,7 @@ func FindMatchNodesByNodepool(allNodes *corev1.NodeList, pool *poolv1.NodePool) 
 }
 
 func FindNodepoolByNodeName(node string, pools *poolv1.NodePoolList) *poolv1.NodePool {
-	for _, pool := range pools.Items{
+	for _, pool := range pools.Items {
 		for i, nodeName := range pool.Status.Nodes {
 			if node == nodeName {
 				return &pools.Items[i]
@@ -110,7 +110,7 @@ func FindNodepoolByNodeObj(node *corev1.Node, pools *poolv1.NodePoolList) *poolv
 	return nil
 }
 
-func deleteNodeFromPoolnodes(del string, nodes []string)(new []string){
+func deleteNodeFromPoolnodes(del string, nodes []string) (new []string) {
 	for _, node := range nodes {
 		if del == node {
 			continue

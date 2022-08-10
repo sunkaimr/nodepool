@@ -28,8 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-
-
 // NodePoolReconciler reconciles a NodePool object
 type NamespaceReconciler struct {
 	client.Client
@@ -41,16 +39,21 @@ type NamespaceReconciler struct {
 //+kubebuilder:rbac:groups=nodes.sunkai.xyz,resources=nodepools/finalizers,verbs=update
 // Reconcile, ns发生变动，只需在创建ns时创建对应的nodepool
 func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	l := log.FromContext(ctx)
 
 	ns := corev1.Namespace{}
 	err := r.Get(ctx, req.NamespacedName, &ns)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			log.Log.Info(fmt.Sprintf("namespace:%v has been delete", req))
+			l.Info(fmt.Sprintf("namespace:%v has been delete", req))
 			return ctrl.Result{}, nil
 		}
-		log.Log.Error(err, fmt.Sprintf("error on getting namespace:%v", req))
+		l.Error(err, fmt.Sprintf("error on getting namespace:%v", req))
+		return ctrl.Result{}, err
+	}
+
+	if InclusionExceptionNs(ns.Name) {
+		l.Info(fmt.Sprintf("namespace:%v has been exclusion", ns.Name))
 		return ctrl.Result{}, err
 	}
 
@@ -62,24 +65,24 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if errors.IsNotFound(err) {
 			exist = false
 		} else {
-			log.Log.Info(fmt.Sprintf("error on getting namespace:%v", req))
+			l.Info(fmt.Sprintf("error on getting namespace:%v", req))
 			return ctrl.Result{}, err
 		}
 	}
 
 	// nodepool不存在时创建一个新的
 	if !exist {
-		log.Log.Info(fmt.Sprintf("nodepool: %v/%s not exist", genPool.Namespace, genPool.Name))
+		l.Info(fmt.Sprintf("nodepool: %v/%s not exist", genPool.Namespace, genPool.Name))
 		err = r.Create(ctx, genPool)
 		if err != nil {
-			log.Log.Error(err, "error on create nodepool")
+			l.Error(err, "error on create nodepool")
 			return ctrl.Result{}, err
 		}
-		log.Log.Info(fmt.Sprintf("nodepool: %v/%s created", genPool.Namespace, genPool.Name))
+		l.Info(fmt.Sprintf("nodepool: %v/%s created", genPool.Namespace, genPool.Name))
 
 		err = r.Status().Update(ctx, genPool)
 		if err != nil {
-			log.Log.Error(err, fmt.Sprintf("failed to update nodepool status"))
+			l.Error(err, fmt.Sprintf("failed to update nodepool status"))
 			return ctrl.Result{}, err
 		}
 	}
@@ -92,12 +95,12 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		pool.Spec.NodeSelector = genPool.Spec.NodeSelector
 		err = r.Update(ctx, &pool)
 		if err != nil {
-			log.Log.Error(err, "error on update nodepool")
+			l.Error(err, "error on update nodepool")
 			return ctrl.Result{}, err
 		}
-		log.Log.Info(fmt.Sprintf("nodepool: %v/%s updated", genPool.Namespace, genPool.Name))
+		l.Info(fmt.Sprintf("nodepool: %v/%s updated", genPool.Namespace, genPool.Name))
 	}
-*/
+	*/
 	return ctrl.Result{}, nil
 }
 
